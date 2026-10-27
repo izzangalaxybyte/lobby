@@ -161,7 +161,7 @@ private fun Home(store: AppStore, refresh: Int, needsSetup: Boolean, launch: (In
             Clock()
             Spacer(Modifier.weight(1f))
             if (needsSetup) {
-                SmallTile("Make Home open homehound") {
+                SmallTile("Make Home open Lobby") {
                     launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
                 Spacer(Modifier.width(16.dp))
