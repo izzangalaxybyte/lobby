@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -89,10 +90,22 @@ class HomeActivity : ComponentActivity() {
         )
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Accent, background = Bg, surface = Tile)) {
-                Home(store, refresh, ::launch)
+                Home(store, refresh, needsSetup, ::launch)
             }
         }
     }
+
+    // True until Home leads here: either the Home button service is on (Fire TV, Google TV) or the
+    // system lets homehound be the default home app (stock Android TV).
+    private val needsSetup: Boolean
+        get() {
+            if (HomeButtonService.isEnabled(this)) return false
+            val home = packageManager.resolveActivity(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+                PackageManager.MATCH_DEFAULT_ONLY,
+            )
+            return home?.activityInfo?.packageName != packageName
+        }
 
     override fun onResume() {
         super.onResume()
@@ -111,7 +124,7 @@ class HomeActivity : ComponentActivity() {
 }
 
 @Composable
-private fun Home(store: AppStore, refresh: Int, launch: (Intent?) -> Unit) {
+private fun Home(store: AppStore, refresh: Int, needsSetup: Boolean, launch: (Intent?) -> Unit) {
     var apps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
     var showHidden by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<AppEntry?>(null) }
@@ -137,6 +150,12 @@ private fun Home(store: AppStore, refresh: Int, launch: (Intent?) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Clock()
             Spacer(Modifier.weight(1f))
+            if (needsSetup) {
+                SmallTile("Make Home open homehound") {
+                    launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+                Spacer(Modifier.width(16.dp))
+            }
             SmallTile("Settings") { launch(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
         Spacer(Modifier.size(24.dp))
@@ -225,9 +244,9 @@ private fun AppTile(app: AppEntry, modifier: Modifier, onClick: () -> Unit, onLo
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                app.icon?.let { Image(it, null, Modifier.size(56.dp)) }
-                Spacer(Modifier.size(8.dp))
-                Text(app.label, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                app.icon?.let { Image(it, null, Modifier.size(40.dp)) }
+                Spacer(Modifier.size(6.dp))
+                Text(app.label, color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

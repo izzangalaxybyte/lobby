@@ -2,5 +2,5 @@
 <resources>
     <string name="app_name">homehound</string>
     <string name="service_label">homehound Home button</string>
-    <string name="service_description">Opens homehound whenever the Fire TV home screen would appear.</string>
+    <string name="service_description">Opens homehound whenever the TV\'s built-in home screen would appear.</string>
 </resources>

@@ -2,6 +2,7 @@ package com.thegalaxybyte.homehound
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.graphics.drawable.Drawable
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -37,6 +38,8 @@ class AppStore(private val context: Context) {
             for (ri in pm.queryIntentActivities(intent, 0)) {
                 val pkg = ri.activityInfo.packageName
                 if (pkg in seen || isSystemBloat(pkg) || pkg == context.packageName) continue
+                // Built-in phone leftovers (Files, Downloads); built-in TV apps like YouTube stay.
+                if (!isTv && ri.activityInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0) continue
                 seen[pkg] = ri.loadLabel(pm).toString() to isTv
             }
         }

@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only Amazon's launcher windows are delivered, so the service costs nothing the rest of the time. -->
+<!-- Only stock launcher windows are delivered, so the service costs nothing the rest of the time.
+     Keep in sync with STOCK_LAUNCHERS in HomeButtonService. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:packageNames="com.amazon.tv.launcher"
+    android:packageNames="com.amazon.tv.launcher,com.google.android.apps.tv.launcherx,com.google.android.tvlauncher,com.google.android.leanbacklauncher"
     android:notificationTimeout="0"
     android:canRetrieveWindowContent="false"
     android:description="@string/service_description" />
