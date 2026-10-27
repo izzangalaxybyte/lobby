@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
+import androidx.core.view.drawToBitmap
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -110,6 +112,12 @@ class HomeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refresh++
+    }
+
+    override fun onPause() {
+        // Saved for the Home button cover, which shows it while the system holds homehound back.
+        runCatching { HomeSnapshot.save(this, window.decorView.drawToBitmap(Bitmap.Config.RGB_565)) }
+        super.onPause()
     }
 
     override fun onDestroy() {

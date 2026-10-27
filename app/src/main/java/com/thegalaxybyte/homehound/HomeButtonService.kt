@@ -1,64 +1,97 @@
 package com.thegalaxybyte.homehound
 
 import android.accessibilityservice.AccessibilityService
+import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.util.Log
 import android.view.KeyEvent
+import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.widget.ImageView
+import androidx.core.content.ContextCompat
+import java.io.File
 
 /**
- * Fire OS and Google TV always route Home to their own launcher. This service takes it back in two
- * ways:
+ * The last frame homehound drew before going to the background; the cover shows it. Kept on disk
+ * too, so the first Home press after a reboot isn't a blank screen.
+ */
+object HomeSnapshot {
+    private var bitmap: Bitmap? = null
+
+    fun save(context: Context, frame: Bitmap) {
+        bitmap = frame
+        val file = File(context.cacheDir, "home.jpg")
+        Thread { runCatching { file.outputStream().use { frame.compress(Bitmap.CompressFormat.JPEG, 85, it) } } }.start()
+    }
+
+    fun load(context: Context): Bitmap? =
+        bitmap ?: runCatching { BitmapFactory.decodeFile(File(context.cacheDir, "home.jpg").path) }.getOrNull()?.also { bitmap = it }
+}
+
+/**
+ * Fire OS and Google TV always route Home to their own launcher, and after a Home press the system
+ * holds back every other app for 5 seconds, so homehound can't simply open over it. Instead:
  *
- * - It catches the Home key before the system does and opens homehound directly. This has to
- *   happen first: once the system handles Home it blocks other apps from opening for 5 seconds.
- * - It watches for a stock launcher's home screen reaching the front by other routes (boot, the
- *   last app closing) and opens homehound over it. The stock launcher can re-assert itself while
- *   its opening animation finishes, so it checks again a moment later and repeats if needed.
+ * - On the Home press (the system's "homekey" broadcast) or when the stock launcher's home screen
+ *   shows up some other way (boot, the last app closing), the service covers the screen with
+ *   homehound's last frame straight away and asks for homehound to open.
+ * - The system opens homehound once its hold ends; the cover comes off as soon as it is in front.
+ *   Remote presses are swallowed meanwhile so they can't drive the stock launcher underneath.
  */
 class HomeButtonService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
+    private var cover: View? = null
     private var frontIsStockHome = false
-    private var retries = 0
 
-    private val recheck = Runnable {
-        if (frontIsStockHome && retries < MAX_RETRIES) {
-            retries++
-            openHomehound()
+    private val homeKeyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.getStringExtra("reason") == "homekey") takeOver()
         }
     }
 
-    override fun onKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode != KeyEvent.KEYCODE_HOME) return false
-        // Swallow both halves of the press so the system never sees it; open on release.
-        if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
-            Log.i(TAG, "Home key caught")
-            retries = 0
-            openHomehound()
-        }
-        return true
+    // Asks again in case the request made during the hold was dropped.
+    private val recheck = Runnable { if (frontIsStockHome) openHomehound() }
+    private val coverTimeout = Runnable { removeCover() }
+
+    override fun onServiceConnected() {
+        ContextCompat.registerReceiver(
+            this,
+            homeKeyReceiver,
+            IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
+        val cls = event.className?.toString().orEmpty()
         val homeMarker = STOCK_LAUNCHERS[pkg]
-        if (homeMarker == null) {
-            // Something else came to the front: homehound itself, an app, or a system dialog.
-            // Overlays (keyboard, toasts) also land here but never cover the home screen for long.
-            if (pkg == packageName) retries = 0
-            frontIsStockHome = false
+        if (homeMarker != null) {
+            // Only the home screen; the launcher's other windows (dialogs, pickers) are left alone.
+            if (cls.isNotEmpty() && !cls.contains(homeMarker) && !cls.startsWith("android.")) return
+            frontIsStockHome = true
+            takeOver()
             return
         }
-        // Only the home screen; the launcher's other windows (dialogs, pickers) are left alone.
-        val cls = event.className?.toString().orEmpty()
-        if (cls.isNotEmpty() && !cls.contains(homeMarker) && !cls.startsWith("android.")) return
-        frontIsStockHome = true
+        // The cover is our own window, so only homehound's activity (or another app) ends it.
+        if (pkg == packageName && cls != HomeActivity::class.java.name) return
+        frontIsStockHome = false
+        removeCover()
+    }
+
+    private fun takeOver() {
+        showCover()
         openHomehound()
     }
 
@@ -71,16 +104,52 @@ class HomeButtonService : AccessibilityService() {
         handler.postDelayed(recheck, RECHECK_MS)
     }
 
-    override fun onServiceConnected() {
-        Log.i(TAG, "Home button service connected")
+    @SuppressLint("ClickableViewAccessibility")
+    private fun showCover() {
+        handler.removeCallbacks(coverTimeout)
+        handler.postDelayed(coverTimeout, COVER_MAX_MS)
+        if (cover != null) return
+        val view = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_XY
+            setBackgroundColor(0xFF0B0C10.toInt())
+            HomeSnapshot.load(context)?.let { setImageBitmap(it) }
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setOnKeyListener { _, _, _ -> true }
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            PixelFormat.OPAQUE,
+        )
+        runCatching {
+            getSystemService(WindowManager::class.java).addView(view, params)
+            view.requestFocus()
+            cover = view
+        }
+    }
+
+    private fun removeCover() {
+        handler.removeCallbacks(coverTimeout)
+        val view = cover ?: return
+        cover = null
+        runCatching { getSystemService(WindowManager::class.java).removeView(view) }
     }
 
     override fun onInterrupt() {}
 
+    override fun onDestroy() {
+        removeCover()
+        runCatching { unregisterReceiver(homeKeyReceiver) }
+        super.onDestroy()
+    }
+
     companion object {
-        private const val TAG = "homehound"
-        private const val RECHECK_MS = 700L
-        private const val MAX_RETRIES = 3
+        // The system's hold after Home is 5s; ask again just after it, and never cover for longer.
+        private const val RECHECK_MS = 5_500L
+        private const val COVER_MAX_MS = 7_000L
 
         // Stock launcher package -> part of its home activity's class name.
         private val STOCK_LAUNCHERS = mapOf(

@@ -8,8 +8,11 @@ you installed. No rows, ads, previews or recommendations.
 
 ## Making Home open homehound
 
-Fire OS and Google TV won't let another app be the default home screen. homehound has an
-accessibility service that notices the stock launcher coming up and opens homehound over it.
+Fire OS and Google TV won't let another app be the default home screen, and after Home they hold
+every other app back for 5 seconds. homehound's accessibility service covers the screen with
+homehound's last frame the moment Home is pressed and swaps in the real homehound when the system
+lets it open, so the stock launcher never shows. The remote does nothing for those first few
+seconds.
 
 - **Over adb** (Fire TV or Android TV with network debugging on):
 
