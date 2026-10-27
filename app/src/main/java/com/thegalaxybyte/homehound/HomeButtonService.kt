@@ -64,6 +64,7 @@ class HomeButtonService : AccessibilityService() {
     private val coverTimeout = Runnable { removeCover() }
 
     override fun onServiceConnected() {
+        instance = this
         ContextCompat.registerReceiver(
             this,
             homeKeyReceiver,
@@ -84,10 +85,16 @@ class HomeButtonService : AccessibilityService() {
             takeOver()
             return
         }
-        // The cover is our own window, so only homehound's activity (or another app) ends it.
-        if (pkg == packageName && cls != HomeActivity::class.java.name) return
+        // Other windows (the app being left, system overlays) don't end the cover: only homehound
+        // resuming does, via onHomehoundShown().
         frontIsStockHome = false
-        removeCover()
+    }
+
+    private fun onHomehoundShown() {
+        frontIsStockHome = false
+        handler.removeCallbacks(recheck)
+        // A few frames later, so the real screen is drawn under the cover before it goes.
+        handler.postDelayed({ removeCover() }, 150)
     }
 
     private fun takeOver() {
@@ -141,6 +148,7 @@ class HomeButtonService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         removeCover()
         runCatching { unregisterReceiver(homeKeyReceiver) }
         super.onDestroy()
@@ -149,7 +157,14 @@ class HomeButtonService : AccessibilityService() {
     companion object {
         // The system's hold after Home is 5s; ask again just after it, and never cover for longer.
         private const val RECHECK_MS = 5_500L
-        private const val COVER_MAX_MS = 7_000L
+        private const val COVER_MAX_MS = 8_000L
+
+        // HomeActivity runs in the same process and tells the running service when it resumes.
+        private var instance: HomeButtonService? = null
+
+        fun homehoundShown() {
+            instance?.onHomehoundShown()
+        }
 
         // Stock launcher package -> part of its home activity's class name.
         private val STOCK_LAUNCHERS = mapOf(

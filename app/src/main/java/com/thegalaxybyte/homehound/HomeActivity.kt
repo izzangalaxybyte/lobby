@@ -112,6 +112,8 @@ class HomeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refresh++
+        // Not window focus: the Home button cover holds focus while it is up.
+        HomeButtonService.homehoundShown()
     }
 
     override fun onPause() {
